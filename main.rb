@@ -1,4 +1,6 @@
 require 'ostruct'
+require 'time'
+require 'json'
 require 'exif' #gem install exif
 #exiftool ./mb_dup__101MSDCF_1/DSC06463.JPG | grep Create
 
@@ -9,20 +11,29 @@ require 'exif' #gem install exif
 width = 192
 height = 144
 
-files = Dir.glob("**/*")[0..30].map do |filepath|
+cache = JSON.load File.read "cache.json" rescue Errno::ENOENT
+cache ||= {}
+cache.each{|path,val| val["created_at"] = Time.parse val["created_at"] }
+
+files = Dir.glob("**/*").map do |filepath|
   if [".jpg", ".jpeg"].include?(File.extname(filepath).downcase) and not filepath.start_with? "thumbnails"
-    begin
-      exif = Exif::Data.new(filepath)
-      created_at = [exif.date_time_original, exif.date_time_digitized].min
-    rescue RuntimeError => e
-      raise e unless e.message.include? "no EXIF data in file"
-    end
-    if created_at and created_at.year == 2079
-      created_at = nil #какой-то баг с таймстампаи в exif'е, в File.stat более-менее правильная дата
-    end
-    unless created_at
-      stat = File.stat(filepath)
-      created_at = [stat.ctime, stat.mtime].min
+    if cache[filepath]
+      created_at = cache[filepath]["created_at"]
+    else
+      begin
+        exif = Exif::Data.new(filepath)
+        created_at = [exif.date_time_original, exif.date_time_digitized].min
+      rescue RuntimeError => e
+        raise e unless e.message.include? "no EXIF data in file"
+      end
+      if created_at and created_at.year == 2079
+        created_at = nil #какой-то баг с таймстампаи в exif'е, в File.stat более-менее правильная дата
+      end
+      unless created_at
+        stat = File.stat(filepath)
+        created_at = [stat.ctime, stat.mtime].min
+      end
+      cache[filepath] = {"created_at" => created_at}
     end
     stamp = created_at.strftime "%Y-%m-%d %H:%M:%S"
     name = File.basename(filepath)
@@ -36,6 +47,8 @@ files = Dir.glob("**/*")[0..30].map do |filepath|
                    :dup_group_num => nil)
   end
 end.compact.sort_by{|f| f.created_at }.reverse
+
+File.write "cache.json", JSON.pretty_generate(cache, :indent => "\t")
 
 files.group_by{|f| f.key }.select{|time,files| files.size > 1 }.each_with_index{|tf,i| tf[1].each{|f| f.dup_group_num = i } }
 
