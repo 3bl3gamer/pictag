@@ -3,6 +3,7 @@ require 'time'
 require 'json'
 require 'exif' #gem install exif
 #exiftool ./mb_dup__101MSDCF_1/DSC06463.JPG | grep Create
+#a=[]; for (let i in localStorage) if (i!='length') a.push([i,localStorage[i]]); a.sort((a,b) => String.localeCompare(a,b)); h={}; a.forEach(([k,v]) => h[k]=v); copy(JSON.stringify(h, null, "\t"))
 
 # TODO: для тегов используется комбинация имени и даты, для всех
 #       копий одной фотографии будут храниться одни и те же теги,
