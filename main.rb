@@ -2,12 +2,18 @@ require 'ostruct'
 require 'time'
 require 'json'
 require 'exif' #gem install exif
+
 #exiftool ./mb_dup__101MSDCF_1/DSC06463.JPG | grep Create
+
+#backup:
 #a=[]; for (let i in localStorage) if (i!='length') a.push([i,localStorage[i]]); a.sort((a,b) => String.localeCompare(a,b)); h={}; a.forEach(([k,v]) => h[k]=v); copy(JSON.stringify(h, null, "\t"))
+
+#duplicates:
+#h={}; $$('body > .item').forEach(e => { if (h[e.dataset.key]) console.log(e.dataset.path+' --> '+h[e.dataset.key]); h[e.dataset.key]=e.dataset.path })
 
 # TODO: для тегов используется комбинация имени и даты, для всех
 #       копий одной фотографии будут храниться одни и те же теги,
-#       но но обновления страницы этого не будет видно
+#       но до обновления страницы этого не будет видно
 
 width = 192
 height = 144
@@ -78,6 +84,9 @@ File.write("index.html",
   }
   .item.selected {
     background: gray;
+  }
+  .item.tag-del:not(:hover) {
+    opacity: 0.5;
   }
   .item img {
     display: block;
@@ -265,10 +274,12 @@ function getTags(item) {
   return Array.prototype.map.call(item.querySelectorAll('.tag'), i => i.textContent)
 }
 function setTags(item, tags) {
-  tags = Array.from(new Set(tags)).sort()
+  var tagSet = new Set(tags)
+  tags = Array.from(tagSet).sort()
   item.querySelector('.tags').innerHTML = tags.map(t => `<span class="tag">${t.trim()}</span>`).join('')
   tags.forEach(t => {allTags.delete(t); allTags.add(t)})
   localStorage[item.dataset.key] = tags.join('\\n')
+  item.classList.toggle('tag-del', tagSet.has('del'))
 }
 function getEnteredTags() {
   return tagsArea.value.trim().split('\\n').map(t => t.trim()).filter(t => t != '')
