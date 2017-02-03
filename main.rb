@@ -88,6 +88,17 @@ File.write("index.html",
   .item.tag-del:not(:hover) {
     opacity: 0.5;
   }
+  .item.tag--90° img {
+    transform-origin: 56px 56px;
+    transform: rotate(90deg);
+  }
+  .item.tag-90° img {
+    transform-origin: 72px 56px;
+    transform: rotate(-90deg);
+  }
+  .item.tag-180° img {
+    transform: rotate(180deg);
+  }
   .item img {
     display: block;
     max-width: 128px;
@@ -280,6 +291,9 @@ function setTags(item, tags) {
   tags.forEach(t => {allTags.delete(t); allTags.add(t)})
   localStorage[item.dataset.key] = tags.join('\\n')
   item.classList.toggle('tag-del', tagSet.has('del'))
+  item.classList.toggle('tag--90°', tagSet.has('-90°'))
+  item.classList.toggle('tag-90°', tagSet.has('90°'))
+  item.classList.toggle('tag-180°', tagSet.has('180°'))
 }
 function getEnteredTags() {
   return tagsArea.value.trim().split('\\n').map(t => t.trim()).filter(t => t != '')
