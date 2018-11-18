@@ -30,7 +30,8 @@ files = Dir.glob("**/*").map do |filepath|
       begin
         exif = Exif::Data.new(filepath)
         created_at = [exif.date_time_original, exif.date_time_digitized].min
-      rescue RuntimeError => e
+      rescue Exif::NotReadable => e
+        p [e, filepath]
         raise e unless e.message.include? "no EXIF data in file"
       end
       if created_at and created_at.year == 2079
