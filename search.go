@@ -22,22 +22,30 @@ import (
 )
 
 type ImageFile struct {
-	Path      string
-	Name      string
-	CreatedAt time.Time
-	Stamp     string
-	Key       string
-	Thumb     string
+	Path          string    `json:"-"`
+	RelativePath  string    `json:"relativePath"`
+	Name          string    `json:"name"`
+	CreatedAt     time.Time `json:"createdAt"`
+	Stamp         string    `json:"stamp"`
+	Key           string    `json:"key"`
+	Thumb         string    `json:"-"`
+	RelativeThumb string    `json:"relativeThumb"`
 }
 
-func NewImageFile(fpath string, createdAt time.Time) *ImageFile {
+type ImagesDir struct {
+	Path   string
+	Prefix string
+	Suffix string
+}
+
+func NewImageFile(fpath, relativeFpath, thumbDir string, createdAt time.Time) *ImageFile {
 	fname := filepath.Base(fpath)
 	stamp := createdAt.Local().Format("2006-01-02 15:04:05")
 	key := createdAt.In(time.UTC).Format("2006-01-02T15:04:05Z") + " " + fname
-	thumb := "thumbnails/" +
-		createdAt.In(time.UTC).Format("2006-01-02_15-04-05") +
-		"_" + strings.Replace(fpath, "/", "_", -1)
-	return &ImageFile{fpath, fname, createdAt, stamp, key, thumb}
+	thumbName := createdAt.In(time.UTC).Format("2006-01-02_15-04-05") +
+		"_" + strings.Replace(relativeFpath, "/", "_", -1)
+	thumb := thumbDir + "/" + thumbName
+	return &ImageFile{fpath, relativeFpath, fname, createdAt, stamp, key, thumb, thumbName}
 }
 
 type ImageCacheInfo struct {
@@ -45,34 +53,44 @@ type ImageCacheInfo struct {
 }
 
 type ImageSearcher struct {
-	images []*ImageFile
-	cache  map[string]*ImageCacheInfo
+	images     []*ImageFile
+	imagesDirs []*ImagesDir
+	cache      map[string]*ImageCacheInfo
+	cacheDir   string
+	thumbDir   string
 }
 
-func NewImageSearcher() *ImageSearcher {
-	return &ImageSearcher{cache: make(map[string]*ImageCacheInfo)}
+func NewImageSearcher(cacheDir string) *ImageSearcher {
+	return &ImageSearcher{cacheDir: cacheDir, thumbDir: cacheDir + "/thumbnails"}
 }
 
 func (s *ImageSearcher) ProcessFolder(dirpath string) error {
 	if err := s.loadCache(); err != nil {
 		return merry.Wrap(err)
 	}
+	dirpath = filepath.Clean(dirpath)
+	imagesDir := &ImagesDir{Path: dirpath, Prefix: filepath.Dir(dirpath), Suffix: filepath.Base(dirpath)}
+	s.imagesDirs = append(s.imagesDirs, imagesDir)
 
 	thumbChan, thumbWG := s.startThumbRoutines()
 
 	stt := time.Now()
 	imgCount := 0
 	newImgCount := 0
-	err := filepath.Walk(dirpath, func(fpath string, info os.FileInfo, err error) error {
+	err := filepath.Walk(imagesDir.Path, func(fpath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return merry.Wrap(err)
 		}
-		fmt.Printf("\r\033[0K%s, %.1f fps", fpath, float64(imgCount)/float64(time.Now().Sub(stt)/time.Second))
+		if !strings.HasPrefix(fpath, imagesDir.Path) {
+			return merry.New("unexpected file path: " + fpath + ", need it no be in " + imagesDir.Path)
+		}
+		relativeFpath := fpath[len(imagesDir.Prefix)+1:]
+		fmt.Printf("\r\033[0K%s, %.1f fps", relativeFpath, float64(imgCount)/float64(time.Now().Sub(stt)/time.Second))
 
 		var imgFile *ImageFile
-		cachedInfo, ok := s.cache[fpath]
+		cachedInfo, ok := s.cache[relativeFpath]
 		if ok {
-			imgFile = NewImageFile(fpath, cachedInfo.CreatedAt)
+			imgFile = NewImageFile(fpath, relativeFpath, s.thumbDir, cachedInfo.CreatedAt)
 		} else if !info.IsDir() && s.shouldProcessFile(fpath) {
 			caStr, err := s.createdAt(fpath)
 			if err != nil {
@@ -85,8 +103,8 @@ func (s *ImageSearcher) ProcessFolder(dirpath string) error {
 			if err != nil {
 				return merry.Wrap(err)
 			}
-			imgFile = NewImageFile(fpath, createdAt)
-			s.cache[fpath] = &ImageCacheInfo{createdAt}
+			imgFile = NewImageFile(fpath, relativeFpath, s.thumbDir, createdAt)
+			s.cache[relativeFpath] = &ImageCacheInfo{createdAt}
 			newImgCount++
 
 			if newImgCount%100 == 0 {
@@ -135,9 +153,6 @@ func (s *ImageSearcher) shouldProcessFile(fpath string) bool {
 }
 
 func (s *ImageSearcher) createdAt(fpath string) (string, error) {
-	//fmt.Println(fpath)
-	//f, err := os.Open("/home/zblzgamer/Pictures/T7/102MSDCF/DSC03150.JPG")
-	//f, err := os.Open("/home/zblzgamer/Pictures/T7/102MSDCF/DSC02474.JPG")
 	f, err := os.Open(fpath)
 	if err != nil {
 		return "", merry.Wrap(err)
@@ -172,7 +187,7 @@ func (s *ImageSearcher) createdAtFromExif(x *exif.Exif) string {
 }
 
 func (s *ImageSearcher) loadCache() error {
-	f, err := os.Open("cache.json")
+	f, err := os.Open(s.cacheDir + "/cache.json")
 	if os.IsNotExist(err) {
 		s.cache = make(map[string]*ImageCacheInfo)
 		return nil
@@ -188,7 +203,7 @@ func (s *ImageSearcher) loadCache() error {
 }
 
 func (s *ImageSearcher) saveCache() error {
-	f, err := os.Create("cache_tmp.json")
+	f, err := os.Create(s.cacheDir + "/cache_tmp.json")
 	if err != nil {
 		return merry.Wrap(err)
 	}
@@ -196,7 +211,7 @@ func (s *ImageSearcher) saveCache() error {
 	if err := json.NewEncoder(f).Encode(s.cache); err != nil {
 		return merry.Wrap(err)
 	}
-	if err := os.Rename("cache_tmp.json", "cache.json"); err != nil {
+	if err := os.Rename(s.cacheDir+"/cache_tmp.json", s.cacheDir+"/cache.json"); err != nil {
 		return merry.Wrap(err)
 	}
 	return nil

@@ -1,3 +1,5 @@
 .vscode
 tags
 pictag
+node_modules
+dist

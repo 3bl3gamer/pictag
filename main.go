@@ -1,50 +1,60 @@
 package main
 
 import (
-	"log"
+	"flag"
 	"os"
-	"path"
-	"text/template"
+	"path/filepath"
 
 	"github.com/ansel1/merry"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
-// backup:
-// a=[]; for (let i in localStorage) if (i!='length') a.push([i,localStorage[i]]); a.sort((a,b) => (a+'').localeCompare(b)); h={}; a.forEach(([k,v]) => h[k]=v); copy(JSON.stringify(h, null, "\t"))
-
-func saveIndex(images []*ImageFile) error {
-	f, err := os.Create("index.html")
-	if err != nil {
-		return merry.Wrap(err)
-	}
-	exPath, err := os.Executable()
-	if err != nil {
-		return merry.Wrap(err)
-	}
-	tmpl, err := template.ParseFiles(path.Dir(exPath) + "/template.html")
-	if err != nil {
-		return merry.Wrap(err)
-	}
-	err = tmpl.Execute(f, map[string]interface{}{"images": images})
-	if err != nil {
-		return merry.Wrap(err)
-	}
-	return merry.Wrap(f.Close())
-}
-
 func main() {
-	searcher := &ImageSearcher{}
-	for i, dirname := range os.Args {
-		if i == 0 {
-			continue
+	var imageDirpaths StringsFlag
+	flag.Var(&imageDirpaths, "images", "path to directory with images, flag may be specified several times")
+	flag.Parse()
+
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
+	zerolog.ErrorStackMarshaler = func(err error) interface{} { return merry.Details(err) }
+	zerolog.ErrorStackFieldName = "message" //TODO: https://github.com/rs/zerolog/issues/157
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "2006-01-02 15:04:05.000"})
+
+	if len(imageDirpaths) == 0 {
+		log.Fatal().Msg("no image directories, nothing to do")
+	}
+	for i, dirpath := range imageDirpaths {
+		dirpath, err := filepath.Abs(dirpath)
+		if err != nil {
+			log.Fatal().Msg(merry.Details(err))
 		}
-		if err := searcher.ProcessFolder(dirname); err != nil { // /home/zblzgamer/Pictures/T7/102MSDCF
-			log.Fatal(merry.Details(err))
+		imageDirpaths[i] = dirpath
+	}
+
+	cacheDir, err := MakeCacheDir()
+	if err != nil {
+		log.Fatal().Msg(merry.Details(err))
+	}
+
+	configDir, err := MakeConfigDir()
+	if err != nil {
+		log.Fatal().Msg(merry.Details(err))
+	}
+
+	searcher := NewImageSearcher(cacheDir)
+	for _, dirpath := range imageDirpaths {
+		if err := searcher.ProcessFolder(dirpath); err != nil {
+			log.Fatal().Msg(merry.Details(err))
 		}
 	}
 	searcher.Sort()
 
-	if err := saveIndex(searcher.images); err != nil {
-		log.Fatal(merry.Details(err))
+	tags, err := loadImagesTags(configDir)
+	if err != nil {
+		log.Fatal().Msg(merry.Details(err))
+	}
+
+	if err := StartHTTPServer("127.0.0.1:9008", Env{"dev"}, searcher, tags); err != nil {
+		log.Fatal().Msg(merry.Details(err))
 	}
 }
