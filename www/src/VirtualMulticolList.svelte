@@ -1,5 +1,5 @@
 <script>
-	import { onMount, tick } from 'svelte'
+	import { onMount } from 'svelte'
 
 	export let items
 	export let itemWidth
@@ -23,7 +23,7 @@
 		let docHeight = document.documentElement.clientHeight
 		firstVisibleRow = Math.max(0, Math.floor(-rect.top / itemHeight))
 		lastVisibleRow = Math.max(0, Math.ceil((-rect.top + docHeight) / itemHeight))
-		let visibleRows = lastVisibleRow - firstVisibleRow
+		// let visibleRows = lastVisibleRow - firstVisibleRow
 		// firstVisibleRow = Math.max(0, firstVisibleRow - visibleRows)
 		// lastVisibleRow += visibleRows
 		visibleItems = items.slice(numCols * firstVisibleRow, numCols * lastVisibleRow)
